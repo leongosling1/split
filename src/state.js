@@ -5,7 +5,11 @@ import { supabase, supabaseConfigured } from './supabase.js';
 
 let currentUserId = null;
 let currentUserName = '';
-export function setCurrentUser(userId, name=''){ currentUserId = userId; currentUserName = name; }
+export function setCurrentUser(userId, name=''){
+  if(userId !== currentUserId) resetState();
+  currentUserId = userId;
+  currentUserName = name;
+}
 export function getCurrentUserId(){ return currentUserId; }
 export function getCurrentUserName(){ return currentUserName; }
 
@@ -255,7 +259,7 @@ export function currentProgramWeek(programId){
    MANUAL LOGS
 --------------------------------------------------------------------- */
 export function addManualLog({date, minutes, type, note}){
-  state.manualLogs.push({ id:'m-'+Date.now(), date, minutes, type, note, ts:Date.now() });
+  state.manualLogs.push({ id:'m-'+Date.now()+Math.random().toString(36).slice(2,6), date, minutes, type, note, ts:Date.now() });
 }
 export function deleteManualLog(id){
   state.manualLogs = state.manualLogs.filter(l=>l.id!==id);
@@ -263,95 +267,172 @@ export function deleteManualLog(id){
 
 /* ---------------------------------------------------------------------
    PERSISTENCE — Supabase, scoped to the signed-in user (setCurrentUser).
-   Every save does a full delete+reinsert per table for this user rather
-   than diffing/upserting row by row. That's the simplest way to make
-   deletions (a removed program, a deleted log) actually take effect in
-   the cloud without tracking a separate "pending deletes" list — and at
-   this app's scale (a handful of programs, tens of logs) the cost of
-   rewriting everything on every debounced save is negligible.
+
+   Losing a user's data is the one failure this app can't afford, so:
+   1. Nothing is saved until a load for this user has fully succeeded.
+   2. A save only writes rows that changed since they were last read or
+      written, and only deletes rows this session loaded and the user then
+      removed. A client can therefore never wipe data it never saw.
+   3. An account is only seeded with the starter programs when it has no
+      rows at all AND no user_state row, i.e. a genuinely new user.
 --------------------------------------------------------------------- */
 let onSaveState = ()=>{};
 export function onSave(cb){ onSaveState = cb; }
 
-export async function save(){
-  if(!supabaseConfigured || !currentUserId) return;
-  try{
+let loadedFor = null;
+let synced = emptySynced();
+let saving = null;
+let savePending = false;
+let loadProblem = '';
+function emptySynced(){ return { programs:{}, progress:{}, logs:{}, activeProgramId:null }; }
+const toJson = v => JSON.stringify(v);
+
+export function getLoadProblem(){ return loadProblem; }
+
+export function resetState(){
+  clearTimeout(saveTimer);
+  state.programs = {}; state.progress = {}; state.manualLogs = []; state.activeProgramId = null;
+  loadedFor = null; synced = emptySynced(); loadProblem = '';
+}
+
+function diffRows(current, known){
+  const upserts = [];
+  const deletes = Object.keys(known).filter(id => !(id in current));
+  for(const id of Object.keys(current)){
+    const json = toJson(current[id]);
+    if(known[id] !== json) upserts.push({ id, json });
+  }
+  return { upserts, deletes };
+}
+
+async function writeTable(uid, table, conflict, idCol, current, known, toRow){
+  const { upserts, deletes } = diffRows(current, known);
+  if(upserts.length){
     const now = new Date().toISOString();
+    const rows = upserts.map(u => toRow(u.id, current[u.id], now));
+    const { error } = await supabase.from(table).upsert(rows, { onConflict: conflict });
+    if(error) throw error;
+    upserts.forEach(u => { known[u.id] = u.json; });
+  }
+  if(deletes.length){
+    const { error } = await supabase.from(table).delete().eq('user_id', uid).in(idCol, deletes);
+    if(error) throw error;
+    deletes.forEach(id => { delete known[id]; });
+  }
+}
 
-    await supabase.from('programs').delete().eq('user_id', currentUserId);
-    const programRows = Object.values(state.programs).map(p=>(
-      { id:p.id, user_id:currentUserId, data:p, updated_at:now }
-    ));
-    if(programRows.length){
-      const { error } = await supabase.from('programs').insert(programRows);
+async function doSave(){
+  const uid = currentUserId;
+  const known = synced;
+  if(!Object.keys(state.programs).length && Object.keys(known.programs).length){
+    onSaveState('Save blocked — your program list looks empty');
+    return;
+  }
+  try{
+    await writeTable(uid, 'programs', 'id', 'id', state.programs, known.programs,
+      (id, data, now) => ({ id, user_id:uid, data, updated_at:now }));
+    await writeTable(uid, 'progress', 'user_id,program_id', 'program_id', state.progress, known.progress,
+      (id, data, now) => ({ user_id:uid, program_id:id, data, updated_at:now }));
+    const logsById = Object.fromEntries(state.manualLogs.map(l => [l.id, l]));
+    await writeTable(uid, 'manual_logs', 'id', 'id', logsById, known.logs,
+      (id, data, now) => ({ id, user_id:uid, data, updated_at:now }));
+
+    const active = state.activeProgramId || null;
+    if(active !== known.activeProgramId){
+      const { error } = await supabase.from('user_state').upsert(
+        { user_id:uid, active_program_id:active, updated_at:new Date().toISOString() }
+      );
       if(error) throw error;
+      known.activeProgramId = active;
     }
-
-    await supabase.from('progress').delete().eq('user_id', currentUserId);
-    const progressRows = Object.entries(state.progress).map(([programId,data])=>(
-      { user_id:currentUserId, program_id:programId, data, updated_at:now }
-    ));
-    if(progressRows.length){
-      const { error } = await supabase.from('progress').insert(progressRows);
-      if(error) throw error;
-    }
-
-    await supabase.from('manual_logs').delete().eq('user_id', currentUserId);
-    const logRows = state.manualLogs.map(l=>(
-      { id:l.id, user_id:currentUserId, data:l, updated_at:now }
-    ));
-    if(logRows.length){
-      const { error } = await supabase.from('manual_logs').insert(logRows);
-      if(error) throw error;
-    }
-
-    const { error: usErr } = await supabase.from('user_state').upsert(
-      { user_id:currentUserId, active_program_id: state.activeProgramId, updated_at: now }
-    );
-    if(usErr) throw usErr;
-
     onSaveState('Saved ✓');
   }catch(err){
     console.error('Save error:', err);
     onSaveState('Could not save — check connection');
   }
 }
-export function queueSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ save(); }, 600); }
 
-export async function load(){
-  if(!supabaseConfigured || !currentUserId){
-    state.programs = {}; state.progress = {}; state.manualLogs = []; state.activeProgramId = null;
+export async function save(){
+  if(!supabaseConfigured || !currentUserId) return;
+  if(loadedFor !== currentUserId){
+    onSaveState('Not saved — your data has not finished loading');
     return;
   }
+  if(saving){ savePending = true; return saving; }
+  saving = doSave();
+  try{ await saving; }
+  finally{
+    saving = null;
+    if(savePending){ savePending = false; save(); }
+  }
+}
+export function queueSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>{ save(); }, 600); }
+
+function snapshotBackup(uid){
+  try{ localStorage.setItem('split-backup-'+uid, JSON.stringify(exportData())); }catch(e){ /* storage unavailable */ }
+}
+
+export function exportData(){
+  return {
+    app: 'split',
+    exportedAt: new Date().toISOString(),
+    programs: state.programs,
+    progress: state.progress,
+    manualLogs: state.manualLogs,
+    activeProgramId: state.activeProgramId,
+  };
+}
+
+/* Resolves true only when this user's data is safely in memory and saving is
+   enabled. On any doubt it resolves false and leaves the cloud untouched. */
+export async function load(){
+  const uid = currentUserId;
+  loadedFor = null;
+  synced = emptySynced();
+  loadProblem = '';
+  if(!supabaseConfigured || !uid) return false;
 
   const [programsRes, progressRes, logsRes, stateRes] = await Promise.all([
-    supabase.from('programs').select('id,data').eq('user_id', currentUserId),
-    supabase.from('progress').select('program_id,data').eq('user_id', currentUserId),
-    supabase.from('manual_logs').select('id,data').eq('user_id', currentUserId),
-    supabase.from('user_state').select('active_program_id').eq('user_id', currentUserId).maybeSingle(),
+    supabase.from('programs').select('id,data').eq('user_id', uid),
+    supabase.from('progress').select('program_id,data').eq('user_id', uid),
+    supabase.from('manual_logs').select('id,data').eq('user_id', uid),
+    supabase.from('user_state').select('active_program_id').eq('user_id', uid).maybeSingle(),
   ]);
+  if(currentUserId !== uid) return false;
+
   const firstError = programsRes.error || progressRes.error || logsRes.error || stateRes.error;
   if(firstError){
     console.error('Load error:', firstError);
-    onSaveState('Could not load your data — check connection');
-    state.programs = {}; state.progress = {}; state.manualLogs = []; state.activeProgramId = null;
-    return;
+    loadProblem = "We couldn't load your data. Nothing has been changed or deleted.";
+    return false;
   }
 
-  if(programsRes.data && programsRes.data.length){
-    state.programs = {};
-    programsRes.data.forEach(r=>{ state.programs[r.id] = r.data; });
-    state.progress = {};
-    (progressRes.data||[]).forEach(r=>{ state.progress[r.program_id] = r.data; });
-    state.manualLogs = (logsRes.data||[]).map(r=>r.data);
-    state.activeProgramId = stateRes.data?.active_program_id || listPrograms()[0]?.id || null;
-  }else{
-    // first sign-in for this account — seed the default program library
-    state.programs = {};
-    state.progress = {};
-    state.manualLogs = [];
-    state.activeProgramId = null;
-    seedPrograms.forEach(p=>addProgram(p));
-    await save();
+  const programRows = programsRes.data || [];
+  const progressRows = progressRes.data || [];
+  const logRows = logsRes.data || [];
+  const hasUserState = !!stateRes.data;
+
+  if(programRows.length || progressRows.length || logRows.length){
+    state.programs = {}; state.progress = {}; state.manualLogs = [];
+    programRows.forEach(r => { state.programs[r.id] = r.data; synced.programs[r.id] = toJson(r.data); });
+    progressRows.forEach(r => { state.progress[r.program_id] = r.data; synced.progress[r.program_id] = toJson(r.data); });
+    logRows.forEach(r => { state.manualLogs.push(r.data); synced.logs[r.id] = toJson(r.data); });
+    const savedActive = stateRes.data?.active_program_id || null;
+    synced.activeProgramId = savedActive;
+    state.activeProgramId = (savedActive && state.programs[savedActive]) ? savedActive : (listPrograms()[0]?.id || null);
+    loadedFor = uid;
+    snapshotBackup(uid);
+    return true;
   }
+
+  if(!hasUserState){
+    state.programs = {}; state.progress = {}; state.manualLogs = []; state.activeProgramId = null;
+    seedPrograms.forEach(p => addProgram({ ...p, id: undefined }));
+    loadedFor = uid;
+    await save();
+    return true;
+  }
+
+  loadProblem = 'Your account looks empty, which is unexpected. Saving is paused so nothing is overwritten.';
+  return false;
 }

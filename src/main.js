@@ -1,6 +1,6 @@
 import './style.css';
 import {
-  load, queueSave, onSave, setCurrentUser,
+  load, save, queueSave, onSave, setCurrentUser, getLoadProblem,
   toggleSession, toggleExerciseDone, toggleAllExercises, duplicateWeek,
   setSessionNote, setPhaseNote, setSessionValue, deleteManualLog, addManualLog,
   getActiveProgram
@@ -167,7 +167,7 @@ document.getElementById('lp-save').addEventListener('click', ()=>{
 /* ---------------------------------------------------------------------
    AUTH GATES
 --------------------------------------------------------------------- */
-const gates = ['config','auth','share'];
+const gates = ['config','auth','share','error'];
 function showGate(name){
   gates.forEach(g=>document.getElementById('gate-'+g).classList.toggle('hidden', g!==name));
   document.getElementById('app-root').classList.add('hidden');
@@ -214,40 +214,74 @@ document.getElementById('email-form').addEventListener('submit', async (e)=>{
 });
 document.getElementById('btn-signout').addEventListener('click', ()=>{ signOut(); });
 
+let pendingShareId = takePendingShare() || new URLSearchParams(location.search).get('share');
+let loadedUserId = null;
+let loadPromise = null;
+let loadPromiseUser = null;
+
+/* Loads this user's cloud data once. Repeat auth events for the same user
+   (token refreshes, tab refocus) reuse the result instead of reloading, and
+   concurrent calls share one in-flight load. */
+function ensureLoaded(user){
+  if(loadedUserId === user.id) return Promise.resolve(true);
+  if(loadPromise && loadPromiseUser === user.id) return loadPromise;
+  setCurrentUser(user.id, displayName(user));
+  loadPromiseUser = user.id;
+  loadPromise = load()
+    .then(ok => { if(ok) loadedUserId = user.id; return ok; })
+    .finally(() => { loadPromise = null; loadPromiseUser = null; });
+  return loadPromise;
+}
+
 async function handleSession(session){
   const user = session?.user || null;
-  if(user){
-    setCurrentUser(user.id, displayName(user));
-    renderUserBadge(user);
+
+  if(!user){
+    loadedUserId = null;
+    setCurrentUser(null);
+    if(pendingShareId){
+      showGate('share');
+      await renderShareGate(pendingShareId, {});
+    }else{
+      showGate('auth');
+    }
+    return;
   }
 
-  const shareId = takePendingShare() || new URLSearchParams(location.search).get('share');
-  if(shareId){
+  renderUserBadge(user);
+  if(loadedUserId === user.id) return;
+
+  const ok = await ensureLoaded(user);
+  if(!ok){
+    document.getElementById('load-error-text').textContent = getLoadProblem() || "We couldn't load your data. Nothing has been changed or deleted.";
+    showGate('error');
+    return;
+  }
+
+  if(pendingShareId){
     showGate('share');
-    await renderShareGate(shareId, {
+    await renderShareGate(pendingShareId, {
       onImported: async ()=>{
+        pendingShareId = null;
         history.replaceState(null, '', location.pathname);
+        await save();
         showApp();
-        await load();
         switchView('library');
       }
     });
     return;
   }
 
-  if(!user){
-    showGate('auth');
-    return;
-  }
-
   showApp();
-  await load();
   switchView(currentView);
 }
 
+document.getElementById('btn-retry-load').addEventListener('click', ()=>{ location.reload(); });
+
 async function boot(){
   if(!supabaseConfigured){ showGate('config'); return; }
-  onAuthChange(session => { handleSession(session); });
+  // Deferred so the auth client's internal lock is released before we query.
+  onAuthChange(session => { setTimeout(()=>{ handleSession(session); }, 0); });
 }
 
 /* ---------------------------------------------------------------------
