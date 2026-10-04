@@ -29,6 +29,7 @@ function switchView(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));
   document.getElementById('view-'+view).classList.remove('hidden');
   document.querySelectorAll('.navtab').forEach(t=>t.classList.toggle('active', t.dataset.view===view));
+  window.scrollTo(0,0);
   renderCurrentView();
 }
 function renderCurrentView(){

@@ -88,8 +88,8 @@ export function renderDashboard(){
           <div class="chart-bars">${bars}</div>
         </div>
 
-        <div class="card" style="padding:24px 0 4px;">
-          <h2 class="mono" style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin:0 0 4px;padding:0 28px;">Recent activity</h2>
+        <div class="card recent-card">
+          <h2 class="mono recent-title">Recent activity</h2>
           ${recentHtml}
         </div>
       </div>

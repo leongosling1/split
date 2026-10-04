@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f0d">
 <title>SPLIT</title>
 <link rel="stylesheet" href="/src/style.css">
 </head>
@@ -63,9 +64,9 @@
       <span id="user-name" class="mono"></span>
       <button class="btn-ghost" id="btn-signout">Sign out</button>
     </div>
-    <button class="btn-log" id="toggleLog">
+    <button class="btn-log" id="toggleLog" aria-label="Log session">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#08110a" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      Log session
+      <span class="btn-log-label">Log session</span>
     </button>
   </div>
 </header>
@@ -76,8 +77,8 @@
     <div class="field"><label for="lp-mins">Minutes</label><input id="lp-mins" type="number" min="1" max="600" placeholder="30"></div>
     <div class="field"><label for="lp-note">Note (optional)</label><input id="lp-note" placeholder="how it felt, anything worth noting"></div>
     <div class="field"><label for="lp-date">Date</label><input id="lp-date" type="date"></div>
-    <button class="btn-log" id="lp-save" style="height:37px;">Save</button>
-    <button class="del-btn" id="lp-cancel" style="width:37px;height:37px;">✕</button>
+    <button class="btn-log lp-save" id="lp-save">Save</button>
+    <button class="del-btn lp-cancel" id="lp-cancel" aria-label="Cancel">✕</button>
   </div>
 </div>
 <datalist id="lp-types">
