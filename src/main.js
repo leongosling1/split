@@ -12,7 +12,7 @@ import { renderShareGate, takePendingShare } from './views/shareView.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderHistory } from './views/history.js';
 import { renderRecords } from './views/records.js';
-import { renderProgramsView, setChecked, updateProgramCounters, syncSessionCheckboxUI } from './views/programs.js';
+import { renderProgramsView, setChecked, updateProgramCounters, syncSessionCheckboxUI, showWeek } from './views/programs.js';
 import { renderLibraryView } from './views/library.js';
 
 let currentView = 'dashboard';
@@ -59,7 +59,9 @@ document.addEventListener('click', (e)=>{
     const lastWi = active.phases[pi].weeks.length - 1;
     duplicateWeek(active.id, pi, lastWi);
     queueSave();
+    showWeek(active.id, pi, lastWi + 1);
     renderProgramsView();
+    window.scrollTo(0,0);
     return;
   }
   const actToggle = e.target.closest('#view-programs [data-toggle-activity]');

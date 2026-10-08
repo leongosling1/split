@@ -42,10 +42,11 @@ export function sessionKey(pi, wi, ai, ii){ return `${pi}-${wi}-${ai}-${ii}`; }
 
 function ensureProgress(programId){
   if(!state.progress[programId]){
-    state.progress[programId] = { sessions:{}, sessionNotes:{}, phaseNotes:{}, sessionValues:{}, exerciseDone:{} };
+    state.progress[programId] = { sessions:{}, sessionNotes:{}, phaseNotes:{}, sessionValues:{}, exerciseDone:{}, weeksDone:{} };
   }
   const prog = state.progress[programId];
   if(!prog.exerciseDone) prog.exerciseDone = {};
+  if(!prog.weeksDone) prog.weeksDone = {};
   return prog;
 }
 
@@ -236,23 +237,49 @@ export function programProgress(programId){
   })));
   return { done, total };
 }
+/* Every week of a program in order, numbered across phases (1..N). */
+export function listWeeks(program){
+  const out = [];
+  program.phases.forEach((p,pi)=>p.weeks.forEach((_,wi)=>out.push({ pi, wi, num: out.length+1 })));
+  return out;
+}
+
+/* Week completion is an explicit tick by the user, not derived from
+   sessions: people often miss a session and still move on. Keyed
+   positionally like sessions, which stays valid because weeks are only
+   ever appended to the end of a phase. */
+export function isWeekComplete(programId, pi, wi){
+  return !!ensureProgress(programId).weeksDone[`${pi}-${wi}`];
+}
+export function toggleWeekComplete(programId, pi, wi){
+  const weeksDone = ensureProgress(programId).weeksDone;
+  const key = `${pi}-${wi}`;
+  if(weeksDone[key]) delete weeksDone[key];
+  else weeksDone[key] = true;
+  return !!weeksDone[key];
+}
+export function weekSessionCounts(programId, pi, wi){
+  const week = getProgram(programId)?.phases[pi]?.weeks[wi];
+  if(!week) return { done:0, total:0 };
+  const prog = ensureProgress(programId);
+  let done=0, total=0;
+  week.activities.forEach((act,ai)=>{
+    total += act.count;
+    for(let ii=0; ii<act.count; ii++){ if(prog.sessions[sessionKey(pi,wi,ai,ii)]?.done) done++; }
+  });
+  return { done, total };
+}
+
+/* The current week is the first one not marked complete. */
 export function currentProgramWeek(programId){
   const program = getProgram(programId);
   if(!program) return null;
-  const prog = ensureProgress(programId);
-  let weekCounter = 0;
-  for(let pi=0; pi<program.phases.length; pi++){
-    const p = program.phases[pi];
-    for(let wi=0; wi<p.weeks.length; wi++){
-      weekCounter++;
-      const week = p.weeks[wi];
-      let done=0, total=0;
-      week.activities.forEach((act,ai)=>{ total+=act.count;
-        for(let ii=0; ii<act.count; ii++){ const s=prog.sessions[sessionKey(pi,wi,ai,ii)]; if(s&&s.done) done++; } });
-      if(done<total) return { pi, wi, phase:p, week, weekNum:weekCounter, done, total, totalWeeks: program.phases.reduce((s,ph)=>s+ph.weeks.length,0) };
-    }
-  }
-  return null; // program complete
+  const weeks = listWeeks(program);
+  const w = weeks.find(w => !isWeekComplete(programId, w.pi, w.wi));
+  if(!w) return null; // program complete
+  const { done, total } = weekSessionCounts(programId, w.pi, w.wi);
+  return { pi:w.pi, wi:w.wi, phase:program.phases[w.pi], week:program.phases[w.pi].weeks[w.wi],
+           weekNum:w.num, done, total, totalWeeks:weeks.length };
 }
 
 /* ---------------------------------------------------------------------

@@ -190,6 +190,29 @@ main{max-width:1440px;margin:0 auto;padding:48px 60px 0;}
 .phase-notes .lbl{font-family:'Space Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:8px;}
 .phase-notes textarea{width:100%;padding:10px;font-size:13px;resize:vertical;min-height:44px;}
 
+/* programs view: week timeline + one-week-at-a-time navigation */
+.week-progress{font-size:10px;letter-spacing:0.1em;color:var(--muted);margin:0 0 10px;}
+.week-strip{position:relative;display:flex;gap:6px;overflow-x:auto;padding:3px 3px 12px;margin:0 -3px 18px;scrollbar-width:thin;scrollbar-color:var(--line-strong) transparent;-webkit-overflow-scrolling:touch;}
+.week-chip{flex:0 0 auto;min-width:38px;height:38px;padding:0 6px;border-radius:2px;border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);font-family:'Space Mono',monospace;font-size:12px;}
+.week-chip:hover{border-color:var(--volt);color:var(--ink);}
+.week-chip.phase-start{margin-left:14px;}
+.week-chip.current{border-color:var(--volt);color:var(--volt);}
+.week-chip.done{background:var(--volt);border-color:var(--volt);color:#08110a;font-weight:700;}
+.week-chip.viewing{outline:2px solid var(--ink);outline-offset:2px;}
+.week-nav{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+.week-step{flex:none;width:46px;height:46px;background:var(--surface);border:1px solid var(--line-strong);color:var(--ink);border-radius:2px;font-size:22px;line-height:1;}
+.week-step:hover:not(:disabled){border-color:var(--volt);color:var(--volt);}
+.week-step:disabled{opacity:0.3;cursor:default;}
+.week-nav-label{flex:1;min-width:0;text-align:center;display:flex;flex-direction:column;gap:3px;}
+.week-nav-label .mono{font-size:12px;color:var(--volt);letter-spacing:0.08em;}
+.week-nav-label .wn-phase{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.back-to-current{display:block;margin:0 auto 14px;background:none;border:none;color:var(--volt);font-size:12px;text-decoration:underline;text-underline-offset:3px;padding:6px;}
+.week-complete-btn{display:block;width:100%;margin-top:18px;padding:14px;border:1px dashed var(--line-strong);background:none;color:var(--muted);border-radius:2px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;transition:background .15s ease,color .15s ease,border-color .15s ease;}
+.week-complete-btn:hover{border-color:var(--volt);color:var(--volt);}
+.week-complete-btn.ready{border:1px solid var(--volt);background:var(--volt-dim);color:var(--volt);}
+.week-complete-btn.is-complete{border:1px solid var(--volt);background:var(--volt);color:#08110a;}
+.week-complete-hint{font-size:11px;color:var(--dim);text-align:center;margin:8px 0 0;}
+
 /* library view (program list + builder) */
 .lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:16px;margin-top:24px;}
 .lib-card{padding:20px 22px;display:flex;flex-direction:column;gap:10px;}
@@ -311,7 +334,9 @@ main{max-width:1440px;margin:0 auto;padding:48px 60px 0;}
   .field input{padding:0 10px;height:46px;}
 
   /* programs / tracking */
-  .program-select-bar{margin:6px 0 20px;}
+  .program-select-bar{margin:6px 0 16px;}
+  .week-chip{min-width:42px;height:42px;}
+  .week-strip{margin-bottom:14px;}
   .program-select-bar select{width:100%;min-width:0;padding:12px;}
   .phase-head{flex-wrap:wrap;gap:2px 12px;}
   .week{padding:14px;}

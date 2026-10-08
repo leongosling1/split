@@ -1,7 +1,8 @@
 import {
   listPrograms, getActiveProgram, setActiveProgram, sessionKey,
   getSession, getSessionNote, getPhaseNote, getSessionValue, getExerciseDone, queueSave,
-  getCurrentUserName
+  getCurrentUserName, listWeeks, isWeekComplete, toggleWeekComplete, weekSessionCounts,
+  currentProgramWeek
 } from '../state.js';
 import { escapeHtml } from '../utils/dates.js';
 import { buildWeekSnapshot, createProgressShare, shareUrl } from '../sharing.js';
@@ -20,6 +21,26 @@ function metricsPreviewText(metrics){
   const shown = (metrics||[]).filter(m=>String(m.value).trim()!=='');
   if(!shown.length) return '';
   return shown.map(m=>`${escapeHtml(String(m.value))} ${escapeHtml(m.name.toUpperCase())}`).join(' · ');
+}
+
+// Which week (flat index across phases) is on screen, per program. Unset
+// means "show the current week".
+const viewedWeekIndex = {};
+
+export function showWeek(programId, pi, wi){
+  const program = listPrograms().find(p => p.id === programId);
+  if(!program) return;
+  const i = listWeeks(program).findIndex(w => w.pi === pi && w.wi === wi);
+  if(i >= 0) viewedWeekIndex[programId] = i;
+}
+
+function wireSwitcher(){
+  document.getElementById('program-switch').addEventListener('change', (e)=>{
+    setActiveProgram(e.target.value);
+    queueSave();
+    renderProgramsView();
+    document.dispatchEvent(new CustomEvent('active-program-changed'));
+  });
 }
 
 export function renderProgramsView(){
@@ -44,21 +65,59 @@ export function renderProgramsView(){
 
   if(!active){
     container.innerHTML = `<h1 class="disp">PROGRAMS</h1>${switcher}<div class="empty">Pick a program above to see its plan.</div>`;
+    wireSwitcher();
     return;
   }
 
-  const totalWeeks = active.phases.reduce((s,p)=>s+p.weeks.length,0);
-  let weekCounter = 0;
-  let html = `<h1 class="disp">PROGRAMS</h1><p class="mono" style="font-size:11px;color:var(--muted);margin:6px 0 0;">${escapeHtml(active.name.toUpperCase())} — ${totalWeeks} WEEK${totalWeeks===1?'':'S'}</p>${switcher}`;
+  const weeks = listWeeks(active);
+  const totalWeeks = weeks.length;
+  const header = `<h1 class="disp">PROGRAMS</h1><p class="mono" style="font-size:11px;color:var(--muted);margin:6px 0 0;">${escapeHtml(active.name.toUpperCase())} — ${totalWeeks} WEEK${totalWeeks===1?'':'S'}</p>${switcher}`;
 
-  active.phases.forEach((p,pi)=>{
-    html += `<div class="phase"><div class="phase-head"><h2>Phase ${pi+1} · ${escapeHtml(p.title)}</h2><span class="mono" style="font-size:11px;color:var(--muted);">${escapeHtml(p.weeksLabel||'')}</span></div>`;
-    html += `<p class="phase-goal">${escapeHtml(p.goal||'')}</p>`;
-    p.weeks.forEach((week,wi)=>{
-      weekCounter++;
-      html += `<div class="week" id="week-${pi}-${wi}">
+  if(!totalWeeks){
+    container.innerHTML = `${header}<div class="empty">This program has no weeks yet — add some in the Library tab.</div>`;
+    wireSwitcher();
+    return;
+  }
+
+  const cur = currentProgramWeek(active.id);
+  const currentIdx = cur ? cur.weekNum - 1 : totalWeeks - 1;
+  let idx = viewedWeekIndex[active.id];
+  if(idx == null || idx >= totalWeeks) idx = currentIdx;
+  viewedWeekIndex[active.id] = idx;
+  const { pi, wi, num } = weeks[idx];
+  const p = active.phases[pi];
+  const week = p.weeks[wi];
+  const weekComplete = isWeekComplete(active.id, pi, wi);
+  const completedCount = weeks.filter(w => isWeekComplete(active.id, w.pi, w.wi)).length;
+
+  const strip = weeks.map((w,i)=>{
+    const done = isWeekComplete(active.id, w.pi, w.wi);
+    const cls = ['week-chip'];
+    if(done) cls.push('done');
+    if(cur && i===currentIdx) cls.push('current');
+    if(i===idx) cls.push('viewing');
+    if(i>0 && weeks[i-1].pi!==w.pi) cls.push('phase-start');
+    const label = `Week ${w.num}${done?', complete':''}${cur && i===currentIdx?', current week':''} · ${active.phases[w.pi].title}`;
+    return `<button class="${cls.join(' ')}" data-goto-week="${i}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"${i===idx?' aria-current="true"':''}>${w.num}</button>`;
+  }).join('');
+
+  let html = `${header}
+    <div class="week-progress mono">${completedCount} OF ${totalWeeks} WEEKS COMPLETE${cur ? '' : ' — PROGRAM FINISHED'}</div>
+    <div class="week-strip" id="week-strip">${strip}</div>
+    <div class="week-nav">
+      <button class="week-step" data-week-step="-1" aria-label="Previous week"${idx===0?' disabled':''}>‹</button>
+      <div class="week-nav-label">
+        <span class="mono">WEEK ${num} OF ${totalWeeks}</span>
+        <span class="wn-phase">Phase ${pi+1} · ${escapeHtml(p.title)}</span>
+      </div>
+      <button class="week-step" data-week-step="1" aria-label="Next week"${idx===totalWeeks-1?' disabled':''}>›</button>
+    </div>
+    ${cur && idx!==currentIdx ? `<button class="back-to-current" data-goto-week="${currentIdx}">Go to current week (Week ${currentIdx+1})</button>` : ''}
+    ${p.goal ? `<p class="phase-goal">${escapeHtml(p.goal)}</p>` : ''}`;
+
+  html += `<div class="week" id="week-${pi}-${wi}">
         <div class="week-top">
-          <span class="wk">WEEK ${weekCounter}</span>
+          <span class="wk">WEEK ${num}</span>
           <div class="week-top-right">
             <span class="wprog" data-week-progress="${pi}-${wi}">0/0</span>
             <button class="week-share-btn" data-share-week="${pi}-${wi}" title="Share this week's progress">Share</button>
@@ -116,21 +175,35 @@ export function renderProgramsView(){
         }
         html += `</div></div></div>`;
       });
-      html += `</div>`;
-    });
-    html += `<button class="add-link" data-duplicate-last-week="${pi}" style="width:100%;margin-bottom:18px;">+ Add another week (copy of Week ${weekCounter})</button>`;
-    html += `<div class="phase-notes"><div class="lbl">Phase notes / pain check-in</div><textarea data-phasenotekey="${pi}" placeholder="e.g. mild ache at 18 min, resolved by next day"></textarea></div>`;
-    html += `</div>`;
-  });
+  html += `<button class="week-complete-btn${weekComplete?' is-complete':''}" data-mark-week="${pi}-${wi}">${weekComplete ? '✓ Week complete' : 'Mark week complete'}</button>`;
+  if(weekComplete) html += `<p class="week-complete-hint">Tap again to un-mark this week.</p>`;
+  html += `</div>`;
+  if(wi === p.weeks.length-1){
+    html += `<button class="add-link" data-duplicate-last-week="${pi}" style="width:100%;margin-bottom:18px;">+ Add another week (copy of Week ${num})</button>`;
+  }
+  html += `<div class="phase-notes"><div class="lbl">Phase ${pi+1} notes / pain check-in</div><textarea data-phasenotekey="${pi}" placeholder="e.g. mild ache at 18 min, resolved by next day"></textarea></div>`;
 
   container.innerHTML = html;
   applyProgramsState(active.id);
+  wireSwitcher();
 
-  document.getElementById('program-switch').addEventListener('change', (e)=>{
-    setActiveProgram(e.target.value);
-    queueSave();
+  const stripEl = document.getElementById('week-strip');
+  const viewingChip = stripEl.querySelector('.viewing');
+  if(viewingChip) stripEl.scrollLeft = viewingChip.offsetLeft - stripEl.clientWidth/2 + viewingChip.offsetWidth/2;
+
+  const goTo = (i)=>{
+    viewedWeekIndex[active.id] = Math.max(0, Math.min(totalWeeks-1, i));
     renderProgramsView();
-    document.dispatchEvent(new CustomEvent('active-program-changed'));
+    window.scrollTo(0,0);
+  };
+  container.querySelectorAll('[data-goto-week]').forEach(b=>b.addEventListener('click', ()=>goTo(+b.dataset.gotoWeek)));
+  container.querySelectorAll('[data-week-step]').forEach(b=>b.addEventListener('click', ()=>goTo(idx + +b.dataset.weekStep)));
+  container.querySelector('[data-mark-week]').addEventListener('click', ()=>{
+    const nowComplete = toggleWeekComplete(active.id, pi, wi);
+    queueSave();
+    // ticking a week off moves you on to the next one
+    if(nowComplete && idx < totalWeeks-1) goTo(idx+1);
+    else renderProgramsView();
   });
 
   document.querySelectorAll('[data-share-week]').forEach(b=>b.addEventListener('click', async ()=>{
@@ -200,6 +273,8 @@ export function updateProgramCounters(programId){
       });
       const wEl=document.querySelector(`[data-week-progress="${pi}-${wi}"]`);
       if(wEl) wEl.textContent = `${weekDone}/${weekTotal}`;
+      const markBtn=document.querySelector(`#view-programs [data-mark-week="${pi}-${wi}"]`);
+      if(markBtn) markBtn.classList.toggle('ready', weekTotal>0 && weekDone===weekTotal);
     });
   });
 }
