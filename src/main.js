@@ -1,12 +1,13 @@
 import './style.css';
 import {
-  load, save, queueSave, onSave, setCurrentUser, getLoadProblem,
+  load, save, queueSave, onSave, setCurrentUser, getLoadProblem, loadDemoState,
   toggleSession, toggleExerciseDone, toggleAllExercises, duplicateWeek,
   setSessionNote, setPhaseNote, setSessionValue, deleteManualLog, addManualLog,
-  getActiveProgram
+  getActiveProgram, currentProgramWeek
 } from './state.js';
 import { todayISO } from './utils/dates.js';
-import { supabaseConfigured } from './supabase.js';
+import { supabaseConfigured, isDemo } from './supabase.js';
+import { buildDemoState } from './data/demoData.js';
 import { signInWithGitHub, signInWithGoogle, signInWithEmail, signOut, onAuthChange, displayName, avatarUrl } from './auth.js';
 import { renderShareGate, takePendingShare } from './views/shareView.js';
 import { renderDashboard } from './views/dashboard.js';
@@ -51,6 +52,24 @@ document.addEventListener('active-program-changed', ()=>{
 });
 
 document.addEventListener('click', (e)=>{
+  const todayCheck = e.target.closest('#view-dashboard [data-today-check]');
+  if(todayCheck){
+    const active = getActiveProgram();
+    if(!active) return;
+    const key = todayCheck.dataset.todayCheck;
+    if(todayCheck.dataset.multi) toggleAllExercises(active.id, key);
+    else toggleSession(active.id, key);
+    queueSave();
+    renderDashboard();
+    return;
+  }
+  if(e.target.closest('#view-dashboard [data-open-today]')){
+    const active = getActiveProgram();
+    const cur = active && currentProgramWeek(active.id);
+    if(cur) showWeek(active.id, cur.pi, cur.wi);
+    switchView('programs');
+    return;
+  }
   const dupWeek = e.target.closest('#view-programs [data-duplicate-last-week]');
   if(dupWeek){
     const active = getActiveProgram();
@@ -117,7 +136,7 @@ document.addEventListener('click', (e)=>{
 
 document.addEventListener('keydown',(e)=>{
   if(e.key!=='Enter' && e.key!==' ') return;
-  const box=e.target.closest('#view-programs .mini-check, #view-programs .exercise-check');
+  const box=e.target.closest('#view-programs .mini-check, #view-programs .exercise-check, #view-dashboard [data-today-check]');
   if(box){ e.preventDefault(); box.click(); return; }
   const toggle=e.target.closest('#view-programs [data-toggle-exercise], #view-programs [data-toggle-activity]');
   if(toggle){ e.preventDefault(); toggle.click(); }
@@ -280,7 +299,21 @@ async function handleSession(session){
 
 document.getElementById('btn-retry-load').addEventListener('click', ()=>{ location.reload(); });
 
+function startDemo(){
+  loadDemoState(buildDemoState());
+  document.getElementById('user-name').textContent = 'Demo';
+  document.getElementById('user-avatar').classList.add('hidden');
+  document.getElementById('btn-signout').classList.add('hidden');
+  const banner = document.createElement('div');
+  banner.className = 'demo-banner mono';
+  banner.textContent = 'Preview with demo data · nothing is saved';
+  document.getElementById('app-root').prepend(banner);
+  showApp();
+  switchView('dashboard');
+}
+
 async function boot(){
+  if(isDemo){ startDemo(); return; }
   if(!supabaseConfigured){ showGate('config'); return; }
   // Deferred so the auth client's internal lock is released before we query.
   onAuthChange(session => { setTimeout(()=>{ handleSession(session); }, 0); });

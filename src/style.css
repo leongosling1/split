@@ -213,6 +213,35 @@ main{max-width:1440px;margin:0 auto;padding:48px 60px 0;}
 .week-complete-btn.is-complete{border:1px solid var(--volt);background:var(--volt);color:#08110a;}
 .week-complete-hint{font-size:11px;color:var(--dim);text-align:center;margin:8px 0 0;}
 
+/* fixed-days programs: day blocks in the week view */
+.day-block{border-top:1px solid var(--line);padding:12px 0 6px;}
+.day-block:first-of-type{border-top:none;}
+.day-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.day-name{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);}
+.day-tag{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;}
+.day-block.is-today{background:var(--volt-dim);margin:6px -12px;padding:12px 12px 8px;border-radius:3px;border-top:none;}
+.day-block.is-today .day-name,.day-block.is-today .day-tag{color:var(--volt);}
+.day-block.is-done .day-tag{color:var(--volt);}
+.day-block.is-missed{opacity:0.55;}
+.day-block.is-missed .day-tag{color:var(--red);}
+.rest-day{font-size:13px;color:var(--dim);padding:6px 0 4px;}
+
+/* dashboard: today card */
+.today-card{margin:24px 0 0;padding:22px 26px;border-color:var(--volt);}
+.today-eyebrow{font-size:12px;letter-spacing:0.1em;color:var(--volt);}
+.today-sub{font-size:10px;letter-spacing:0.08em;color:var(--muted);margin-top:4px;}
+.today-rest{font-family:'Archivo Black',sans-serif;font-size:22px;margin:14px 0 4px;}
+.today-next{font-size:13px;color:var(--muted);margin-top:10px;}
+.today-items{display:flex;flex-direction:column;gap:2px;margin:14px 0 4px;}
+.today-item{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line);}
+.today-item:first-child{border-top:none;}
+.today-item .mini-check{width:30px;height:30px;font-size:13px;}
+.today-item-name{font-size:17px;font-weight:700;}
+.today-item-meta{font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:0.04em;}
+.today-item.is-done .today-item-name{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--dim);}
+.today-actions{display:flex;align-items:center;gap:14px;margin-top:12px;}
+.today-done{font-size:11px;color:var(--volt);letter-spacing:0.08em;}
+
 /* library view (program list + builder) */
 .lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:16px;margin-top:24px;}
 .lib-card{padding:20px 22px;display:flex;flex-direction:column;gap:10px;}
@@ -243,6 +272,17 @@ main{max-width:1440px;margin:0 auto;padding:48px 60px 0;}
 .count-field input{width:52px;flex:none;}
 .count-field .mono{font-size:10px;color:var(--muted);white-space:nowrap;}
 .exercises-list{display:flex;flex-direction:column;gap:8px;}
+.builder select{width:100%;padding:9px 10px;font-size:13px;}
+.builder-hint{font-size:12px;color:var(--muted);line-height:1.5;margin:-2px 0 16px;}
+.day-picker{display:flex;gap:5px;flex-wrap:wrap;margin:-2px 0 10px;}
+.day-pick{min-width:42px;height:32px;padding:0 6px;border:1px solid var(--line-strong);background:var(--surface2);color:var(--muted);border-radius:2px;font-family:'Space Mono',monospace;font-size:11px;}
+.day-pick:hover{border-color:var(--volt);color:var(--ink);}
+.day-pick.on{background:var(--volt);border-color:var(--volt);color:#08110a;font-weight:700;}
+.week-glance{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:0 0 12px;}
+.glance-day{background:var(--surface);border:1px solid var(--line);border-radius:2px;padding:6px 5px;display:flex;flex-direction:column;gap:3px;font-size:11px;line-height:1.3;min-width:0;overflow-wrap:anywhere;}
+.glance-day .mono{font-size:9px;color:var(--volt);letter-spacing:0.06em;}
+.glance-day.rest{color:var(--dim);}
+.glance-day.rest .mono{color:var(--dim);}
 .builder-exercise{background:var(--surface2);border:1px solid var(--line);border-radius:2px;padding:10px;}
 .builder-exercise-single{background:none;border:none;padding:0;}
 .builder-exercise-head{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
@@ -262,6 +302,7 @@ main{max-width:1440px;margin:0 auto;padding:48px 60px 0;}
 .backup-title{font-family:'Space Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:6px;}
 .backup-text p{margin:0;font-size:13px;color:var(--muted);line-height:1.5;}
 .backup-card .btn-ghost{flex:none;}
+.demo-banner{background:var(--cyan);color:#06222e;text-align:center;font-size:11px;letter-spacing:0.06em;padding:7px 16px;text-transform:uppercase;}
 .empty{padding:60px 0;text-align:center;color:var(--muted);font-size:14px;}
 .savestate{max-width:1440px;margin:20px auto 0;padding:0 60px;font-family:'Space Mono',monospace;font-size:11px;color:var(--volt);min-height:16px;}
 
@@ -380,4 +421,12 @@ main{max-width:1440px;margin:0 auto;padding:48px 60px 0;}
   .gate-card{padding:28px 20px;}
   .gate-email-row input{min-width:0;}
   .backup-card{flex-direction:column;align-items:stretch;padding:16px;}
+  .today-card{padding:18px 16px;margin-top:18px;}
+  .today-rest{font-size:20px;}
+  .day-block.is-today{margin:6px -8px;padding:12px 8px 8px;}
+  .day-picker{gap:3px;flex-wrap:nowrap;}
+  .day-pick{min-width:0;height:38px;flex:1 1 0;padding:0;font-size:10px;}
+  .builder-activity-top.is-fixed > :first-child{grid-column:1;}
+  .builder-activity-top.is-fixed > :nth-child(2){display:none;}
+  .week-glance{grid-template-columns:repeat(4,minmax(0,1fr));}
 }

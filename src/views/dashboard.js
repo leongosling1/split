@@ -1,6 +1,47 @@
-import { getAllLogs, getActiveProgram, programProgress, currentProgramWeek } from '../state.js';
+import { getAllLogs, getActiveProgram, programProgress, currentProgramWeek, todayPlan, getSession, DAY_LONG } from '../state.js';
 import { currentStreak, monthStats, weeklyTotals, heatmapGrid, heatClass, computeRecords } from '../metrics.js';
 import { relDate, escapeHtml } from '../utils/dates.js';
+import { isSimple, metricsPreviewText } from './programs.js';
+
+function workoutSummary(act){
+  if(isSimple(act)) return metricsPreviewText(act.exercises[0].metrics);
+  const n = act.exercises.length;
+  return `${n} exercise${n===1?'':'s'}`;
+}
+
+function todayCardHtml(plan){
+  if(plan.finished){
+    return `<div class="card today-card"><div class="today-eyebrow mono">TODAY</div>
+      <div class="today-rest">You've finished ${escapeHtml(plan.program.name)}.</div></div>`;
+  }
+  const { cur, today, items, next } = plan;
+  const head = `<div class="today-eyebrow mono">TODAY · ${DAY_LONG[today].toUpperCase()}</div>
+    <div class="today-sub mono">WEEK ${cur.weekNum} OF ${cur.totalWeeks} · ${escapeHtml(cur.phase.title.toUpperCase())}</div>`;
+  const nextLine = next
+    ? `<div class="today-next">Next: ${DAY_LONG[next.day]} · ${next.items.map(x=>escapeHtml(x.act.label)).join(', ')}</div>`
+    : `<div class="today-next">Nothing else scheduled this week.</div>`;
+
+  if(!items.length){
+    return `<div class="card today-card">${head}<div class="today-rest">Rest day</div>${nextLine}</div>`;
+  }
+  const rows = items.map(({ act, key })=>{
+    const done = !!getSession(plan.program.id, key)?.done;
+    return `<div class="today-item${done?' is-done':''}">
+      <div class="mini-check${done?' checked':''}" data-today-check="${key}" data-multi="${isSimple(act)?'':'1'}" role="checkbox" aria-checked="${done}" aria-label="${escapeHtml(act.label)} done" tabindex="0">${done?'✓':''}</div>
+      <div class="today-item-text"><div class="today-item-name">${escapeHtml(act.label)}</div>
+        <div class="today-item-meta mono">${workoutSummary(act)}</div></div>
+    </div>`;
+  }).join('');
+  const allDone = items.every(({ key }) => getSession(plan.program.id, key)?.done);
+  return `<div class="card today-card${allDone?' all-done':''}">${head}
+    <div class="today-items">${rows}</div>
+    <div class="today-actions">
+      <button class="btn-ghost" data-open-today>${allDone ? 'View week' : 'Open workout'}</button>
+      ${allDone ? '<span class="today-done mono">✓ DONE FOR TODAY</span>' : ''}
+    </div>
+    ${allDone ? nextLine : ''}
+  </div>`;
+}
 
 export function logRowHtml(l, showDelete){
   const del = showDelete ? `<button class="del-btn" data-del="${l.id}" title="Delete entry">✕</button>` : `<span></span>`;
@@ -50,10 +91,12 @@ export function renderDashboard(){
     `<div class="empty">No sessions logged yet — hit "Log session" to start your history.</div>`;
 
   const recs = computeRecords(logs);
+  const plan = activeProgram ? todayPlan(activeProgram.id) : null;
 
   document.getElementById('view-dashboard').innerHTML = `
     <p class="mono" style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin:0 0 6px;">${new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})}</p>
     <h1 class="disp">DASHBOARD</h1>
+    ${plan ? todayCardHtml(plan) : ''}
 
     <div class="card stats">
       <div class="stat">

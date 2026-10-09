@@ -57,7 +57,7 @@ function renderProgramImport(card, share, onImported){
 
   if(signedIn){
     document.getElementById('share-import-btn').addEventListener('click', async ()=>{
-      const created = addProgram({ name:p.name, description:p.description, phases:p.phases, builtin:false });
+      const created = addProgram({ name:p.name, description:p.description, phases:p.phases, builtin:false, ...(p.schedule ? { schedule:p.schedule } : {}) });
       setActiveProgram(created.id);
       queueSave();
       document.getElementById('share-status').textContent = 'Imported — check your Library.';
@@ -87,7 +87,7 @@ function renderProgressReport(card, share){
       }).join('');
       return `<div class="log-row" style="grid-template-columns:1fr auto;">
         <div>
-          <div class="type">${sess.done?'✓ ':''}Session ${sess.n}${sess.date?` <span class="src">${relDate(sess.date)}</span>`:''}</div>
+          <div class="type">${sess.done?'✓ ':''}${sess.day ? escapeHtml(sess.day) : `Session ${sess.n}`}${sess.date?` <span class="src">${relDate(sess.date)}</span>`:''}</div>
           ${exHtml || ''}
           ${sess.note?`<div class="note">${escapeHtml(sess.note)}</div>`:''}
         </div>

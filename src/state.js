@@ -40,6 +40,51 @@ let saveTimer = null;
 
 export function sessionKey(pi, wi, ai, ii){ return `${pi}-${wi}-${ai}-${ii}`; }
 
+/* ---------------------------------------------------------------------
+   SCHEDULE — a program is either flexible ("3× per week", the default)
+   or fixed-days (`schedule: { mode:'fixed', weekStart }`), where each
+   activity lists the weekdays it falls on (`days`, 0=Sun … 6=Sat).
+   A session's slot (the last part of its key) is its index for flexible
+   activities and its weekday for fixed ones, so editing days or changing
+   the week's start day never re-points tracked sessions.
+--------------------------------------------------------------------- */
+export const DAY_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+export const DAY_LONG = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+export function isFixedDays(program){ return program?.schedule?.mode === 'fixed'; }
+export function weekStartOf(program){ return program?.schedule?.weekStart ?? 1; }
+export function orderedDays(program){
+  const start = weekStartOf(program);
+  return [0,1,2,3,4,5,6].map(i => (start + i) % 7);
+}
+export function sessionSlots(program, act){
+  if(isFixedDays(program)) return [...(act.days || [])].sort((a,b)=>a-b);
+  return Array.from({ length: act.count || 0 }, (_, i) => i);
+}
+
+/* Where a weekday sits relative to today within the program's week order. */
+export function dayTiming(program, day, today = new Date().getDay()){
+  const order = orderedDays(program);
+  const d = order.indexOf(day), t = order.indexOf(today);
+  return d === t ? 'today' : d < t ? 'past' : 'future';
+}
+
+/* What the current week asks of the user today (fixed-days programs only). */
+export function todayPlan(programId){
+  const program = getProgram(programId);
+  if(!isFixedDays(program)) return null;
+  const cur = currentProgramWeek(programId);
+  if(!cur) return { program, finished:true };
+  const today = new Date().getDay();
+  const itemsFor = day => cur.week.activities
+    .map((act, ai) => ({ act, ai, key: sessionKey(cur.pi, cur.wi, ai, day) }))
+    .filter(x => (x.act.days || []).includes(day));
+  const items = itemsFor(today);
+  const order = orderedDays(program);
+  const nextDay = order.slice(order.indexOf(today) + 1).find(d => itemsFor(d).length);
+  return { program, cur, today, items, next: nextDay === undefined ? null : { day: nextDay, items: itemsFor(nextDay) } };
+}
+
 function ensureProgress(programId){
   if(!state.progress[programId]){
     state.progress[programId] = { sessions:{}, sessionNotes:{}, phaseNotes:{}, sessionValues:{}, exerciseDone:{}, weeksDone:{} };
@@ -80,6 +125,10 @@ export function addProgram(program){
 export function updateProgram(id, patch){
   if(!state.programs[id]) return;
   state.programs[id] = { ...state.programs[id], ...patch, id };
+}
+export function clearProgress(id){
+  delete state.progress[id];
+  ensureProgress(id);
 }
 export function deleteProgram(id){
   delete state.programs[id];
@@ -198,7 +247,7 @@ export function getProgramLogs(programId){
   program.phases.forEach((p,pi)=>{
     p.weeks.forEach((week,wi)=>{
       week.activities.forEach((act,ai)=>{
-        for(let ii=0; ii<act.count; ii++){
+        for(const ii of sessionSlots(program, act)){
           const key = sessionKey(pi,wi,ai,ii);
           const s = prog.sessions[key];
           if(s && s.done && s.date){
@@ -229,7 +278,7 @@ export function programProgress(programId){
   const prog = ensureProgress(programId);
   let done=0, total=0;
   program.phases.forEach((p,pi)=>p.weeks.forEach((week,wi)=>week.activities.forEach((act,ai)=>{
-    for(let ii=0; ii<act.count; ii++){
+    for(const ii of sessionSlots(program, act)){
       total++;
       const s = prog.sessions[sessionKey(pi,wi,ai,ii)];
       if(s && s.done) done++;
@@ -259,13 +308,15 @@ export function toggleWeekComplete(programId, pi, wi){
   return !!weeksDone[key];
 }
 export function weekSessionCounts(programId, pi, wi){
-  const week = getProgram(programId)?.phases[pi]?.weeks[wi];
+  const program = getProgram(programId);
+  const week = program?.phases[pi]?.weeks[wi];
   if(!week) return { done:0, total:0 };
   const prog = ensureProgress(programId);
   let done=0, total=0;
   week.activities.forEach((act,ai)=>{
-    total += act.count;
-    for(let ii=0; ii<act.count; ii++){ if(prog.sessions[sessionKey(pi,wi,ai,ii)]?.done) done++; }
+    const slots = sessionSlots(program, act);
+    total += slots.length;
+    for(const ii of slots){ if(prog.sessions[sessionKey(pi,wi,ai,ii)]?.done) done++; }
   });
   return { done, total };
 }
@@ -315,6 +366,12 @@ function emptySynced(){ return { programs:{}, progress:{}, logs:{}, activeProgra
 const toJson = v => JSON.stringify(v);
 
 export function getLoadProblem(){ return loadProblem; }
+
+/* Demo builds only: no signed-in user, so save() stays a no-op. */
+export function loadDemoState(demo){
+  resetState();
+  Object.assign(state, demo);
+}
 
 export function resetState(){
   clearTimeout(saveTimer);

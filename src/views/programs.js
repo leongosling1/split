@@ -2,13 +2,13 @@ import {
   listPrograms, getActiveProgram, setActiveProgram, sessionKey,
   getSession, getSessionNote, getPhaseNote, getSessionValue, getExerciseDone, queueSave,
   getCurrentUserName, listWeeks, isWeekComplete, toggleWeekComplete, weekSessionCounts,
-  currentProgramWeek
+  currentProgramWeek, isFixedDays, orderedDays, dayTiming, sessionSlots, DAY_LONG
 } from '../state.js';
 import { escapeHtml } from '../utils/dates.js';
 import { buildWeekSnapshot, createProgressShare, shareUrl } from '../sharing.js';
 import { copyLink } from '../utils/clipboard.js';
 
-function isSimple(act){
+export function isSimple(act){
   return act.exercises.length===1 && !act.exercises[0].label.trim();
 }
 
@@ -17,10 +17,64 @@ function metricChipsHtml(metrics){
   if(!shown.length) return '';
   return `<div class="activity-metrics">${shown.map(m=>`<span class="metric-chip"><b>${escapeHtml(String(m.value))}</b> ${escapeHtml(m.name.toUpperCase())}</span>`).join('')}</div>`;
 }
-function metricsPreviewText(metrics){
+export function metricsPreviewText(metrics){
   const shown = (metrics||[]).filter(m=>String(m.value).trim()!=='');
   if(!shown.length) return '';
   return shown.map(m=>`${escapeHtml(String(m.value))} ${escapeHtml(m.name.toUpperCase())}`).join(' · ');
+}
+
+/* One activity with the sessions in `slots`. Fixed-days programs render one
+   activity per day block, so its single session needs no "Session n" label. */
+function activityHtml(act, pi, wi, ai, slots, { fixed, expanded }){
+  const simple = isSimple(act);
+  let html = `<div class="activity${expanded ? ' expanded' : ''}" data-activity="${pi}-${wi}-${ai}">
+    <div class="activity-head" data-toggle-activity tabindex="0" role="button" aria-expanded="${expanded ? 'true' : 'false'}">
+      <span class="activity-caret">▸</span>
+      <span class="a-label">${escapeHtml(act.label)}</span>
+      <span class="a-count" data-progress="${pi}-${wi}-${ai}" data-slots="${slots.join(',')}">0/${slots.length}</span>
+    </div>
+    <div class="activity-body">`;
+  if(simple) html += metricChipsHtml(act.exercises[0].metrics);
+  html += `<div class="sessions">`;
+  slots.forEach((slot, n)=>{
+    const key = sessionKey(pi, wi, ai, slot);
+    const boxLabel = fixed ? '' : String(n+1);
+    const notePlaceholder = fixed ? 'Notes…' : `Session ${n+1} notes…`;
+    if(simple){
+      html += `<div class="session">
+        <div class="mini-check" data-key="${key}" data-n="${boxLabel}" role="checkbox" aria-checked="false" aria-label="${escapeHtml(act.label)} done" tabindex="0"></div>
+        <input class="note" type="text" data-notekey="${key}" placeholder="${notePlaceholder}">
+      </div>`;
+    }else{
+      html += `<div class="session session-multi" data-key="${key}">
+        <div class="session-multi-top">
+          <div class="mini-check session-check-multi" data-key="${key}" data-n="${boxLabel}" role="checkbox" aria-checked="false" aria-label="Whole workout done" tabindex="0"></div>
+          <span class="session-num mono">${fixed ? 'WHOLE WORKOUT' : `SESSION ${n+1}`}</span>
+        </div>
+        <div class="session-exercises">
+          ${act.exercises.map((ex,ei)=>`
+            <div class="exercise-row" data-key="${key}" data-exercise="${ei}">
+              <div class="exercise-row-top" data-toggle-exercise tabindex="0" role="button" aria-expanded="false">
+                <span class="exercise-row-name">${escapeHtml(ex.label||act.label)}</span>
+                <span class="exercise-row-preview mono">${metricsPreviewText(ex.metrics)}</span>
+                <div class="exercise-check" data-key="${key}" data-exercise="${ei}" role="checkbox" aria-checked="false" tabindex="0"></div>
+              </div>
+              <div class="exercise-row-detail">
+                <div class="se-metrics">
+                  ${ex.metrics.map((m,mi)=>`
+                    <div class="se-metric">
+                      <label>${escapeHtml(m.name||'—')}</label>
+                      <input type="text" data-session-value data-key="${key}" data-exercise="${ei}" data-metric="${mi}" data-target="${escapeHtml(String(m.value))}" placeholder="${escapeHtml(String(m.value))}">
+                    </div>`).join('')}
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>
+        <input class="note" type="text" data-notekey="${key}" placeholder="${notePlaceholder}">
+      </div>`;
+    }
+  });
+  return html + `</div></div></div>`;
 }
 
 // Which week (flat index across phases) is on screen, per program. Unset
@@ -124,57 +178,22 @@ export function renderProgramsView(){
           </div>
         </div>
         <p class="week-desc">${escapeHtml(week.desc)}</p>`;
-      week.activities.forEach((act,ai)=>{
-        const simple = isSimple(act);
-        html += `<div class="activity" data-activity="${pi}-${wi}-${ai}">
-          <div class="activity-head" data-toggle-activity tabindex="0" role="button" aria-expanded="false">
-            <span class="activity-caret">▸</span>
-            <span class="a-label">${escapeHtml(act.label)}</span>
-            <span class="a-count" data-progress="${pi}-${wi}-${ai}">0/${act.count}</span>
-          </div>
-          <div class="activity-body">`;
-
-        if(simple) html += metricChipsHtml(act.exercises[0].metrics);
-
-        html += `<div class="sessions">`;
-        for(let ii=0; ii<act.count; ii++){
-          const key = sessionKey(pi,wi,ai,ii);
-          if(simple){
-            html += `<div class="session">
-              <div class="mini-check" data-key="${key}" data-n="${ii+1}" role="checkbox" aria-checked="false" tabindex="0"></div>
-              <input class="note" type="text" data-notekey="${key}" placeholder="Session ${ii+1} notes…">
-            </div>`;
-          }else{
-            html += `<div class="session session-multi" data-key="${key}">
-              <div class="session-multi-top">
-                <div class="mini-check session-check-multi" data-key="${key}" data-n="${ii+1}" role="checkbox" aria-checked="false" tabindex="0"></div>
-                <span class="session-num mono">SESSION ${ii+1}</span>
-              </div>
-              <div class="session-exercises">
-                ${act.exercises.map((ex,ei)=>`
-                  <div class="exercise-row" data-key="${key}" data-exercise="${ei}">
-                    <div class="exercise-row-top" data-toggle-exercise tabindex="0" role="button" aria-expanded="false">
-                      <span class="exercise-row-name">${escapeHtml(ex.label||act.label)}</span>
-                      <span class="exercise-row-preview mono">${metricsPreviewText(ex.metrics)}</span>
-                      <div class="exercise-check" data-key="${key}" data-exercise="${ei}" role="checkbox" aria-checked="false" tabindex="0"></div>
-                    </div>
-                    <div class="exercise-row-detail">
-                      <div class="se-metrics">
-                        ${ex.metrics.map((m,mi)=>`
-                          <div class="se-metric">
-                            <label>${escapeHtml(m.name||'—')}</label>
-                            <input type="text" data-session-value data-key="${key}" data-exercise="${ei}" data-metric="${mi}" data-target="${escapeHtml(String(m.value))}" placeholder="${escapeHtml(String(m.value))}">
-                          </div>`).join('')}
-                      </div>
-                    </div>
-                  </div>`).join('')}
-              </div>
-              <input class="note" type="text" data-notekey="${key}" placeholder="Session ${ii+1} notes…">
-            </div>`;
-          }
-        }
-        html += `</div></div></div>`;
-      });
+  if(isFixedDays(active)){
+    const isCurrentWeek = !!cur && idx === currentIdx;
+    const today = new Date().getDay();
+    for(const day of orderedDays(active)){
+      const acts = week.activities.map((act,ai)=>({ act, ai })).filter(x => (x.act.days||[]).includes(day));
+      const timing = isCurrentWeek ? dayTiming(active, day, today) : '';
+      const keys = acts.map(x => sessionKey(pi, wi, x.ai, day)).join('|');
+      html += `<div class="day-block${timing ? ' is-'+timing : ''}${acts.length ? '' : ' is-rest'}" data-day-block data-day-keys="${keys}" data-timing="${timing}">
+        <div class="day-head"><span class="day-name">${DAY_LONG[day]}</span><span class="day-tag"></span></div>`;
+      if(!acts.length) html += `<div class="rest-day">Rest day</div>`;
+      acts.forEach(({ act, ai }) => { html += activityHtml(act, pi, wi, ai, [day], { fixed:true, expanded: timing === 'today' }); });
+      html += `</div>`;
+    }
+  }else{
+    week.activities.forEach((act,ai)=>{ html += activityHtml(act, pi, wi, ai, sessionSlots(active, act), { fixed:false }); });
+  }
   html += `<button class="week-complete-btn${weekComplete?' is-complete':''}" data-mark-week="${pi}-${wi}">${weekComplete ? '✓ Week complete' : 'Mark week complete'}</button>`;
   if(weekComplete) html += `<p class="week-complete-hint">Tap again to un-mark this week.</p>`;
   html += `</div>`;
@@ -261,20 +280,28 @@ export function syncSessionCheckboxUI(programId, key){
 export function updateProgramCounters(programId){
   const active = getActiveProgram();
   if(!active || active.id!==programId) return;
-  active.phases.forEach((p,pi)=>{
-    p.weeks.forEach((week,wi)=>{
-      let weekDone=0, weekTotal=0;
-      week.activities.forEach((act,ai)=>{
-        let done=0;
-        for(let ii=0; ii<act.count; ii++){ const s=getSession(programId, sessionKey(pi,wi,ai,ii)); if(s?.done) done++; }
-        weekDone+=done; weekTotal+=act.count;
-        const el=document.querySelector(`[data-progress="${pi}-${wi}-${ai}"]`);
-        if(el) el.textContent = `${done}/${act.count}`;
-      });
-      const wEl=document.querySelector(`[data-week-progress="${pi}-${wi}"]`);
-      if(wEl) wEl.textContent = `${weekDone}/${weekTotal}`;
-      const markBtn=document.querySelector(`#view-programs [data-mark-week="${pi}-${wi}"]`);
-      if(markBtn) markBtn.classList.toggle('ready', weekTotal>0 && weekDone===weekTotal);
-    });
+  const root = document.getElementById('view-programs');
+  const isDone = key => !!getSession(programId, key)?.done;
+
+  root.querySelectorAll('[data-progress]').forEach(el=>{
+    const slots = (el.dataset.slots || '').split(',').filter(s => s !== '');
+    const done = slots.filter(s => isDone(`${el.dataset.progress}-${s}`)).length;
+    el.textContent = `${done}/${slots.length}`;
+  });
+  root.querySelectorAll('[data-week-progress]').forEach(el=>{
+    const [pi,wi] = el.dataset.weekProgress.split('-').map(Number);
+    const { done, total } = weekSessionCounts(programId, pi, wi);
+    el.textContent = `${done}/${total}`;
+    const markBtn = root.querySelector(`[data-mark-week="${pi}-${wi}"]`);
+    if(markBtn) markBtn.classList.toggle('ready', total>0 && done===total);
+  });
+  root.querySelectorAll('[data-day-block]').forEach(el=>{
+    const keys = el.dataset.dayKeys ? el.dataset.dayKeys.split('|') : [];
+    const allDone = keys.length > 0 && keys.every(isDone);
+    const missed = !allDone && keys.length > 0 && el.dataset.timing === 'past';
+    el.classList.toggle('is-done', allDone);
+    el.classList.toggle('is-missed', missed);
+    el.querySelector('.day-tag').textContent =
+      allDone ? '✓ Done' : missed ? 'Missed' : el.dataset.timing === 'today' ? 'Today' : '';
   });
 }

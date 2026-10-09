@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { getCurrentUserId, getSession, getSessionNote, getSessionValue } from './state.js';
+import { getCurrentUserId, getSession, getSessionNote, getSessionValue, sessionSlots, isFixedDays, DAY_SHORT } from './state.js';
 
 function newShareId(){
   return crypto.randomUUID().replace(/-/g, '');
@@ -18,6 +18,7 @@ export async function createProgramShare(program, createdByName){
     name: program.name,
     description: program.description,
     phases: program.phases,
+    ...(program.schedule ? { schedule: program.schedule } : {}),
   };
   const { error } = await supabase.from('shares').insert({
     id, kind: 'program', created_by: getCurrentUserId(), created_by_name: createdByName || null, payload,
@@ -43,7 +44,8 @@ export function buildWeekSnapshot(program, pi, wi){
 
   const activities = week.activities.map((act,ai)=>{
     const sessions = [];
-    for(let ii=0; ii<act.count; ii++){
+    const slots = sessionSlots(program, act);
+    for(const [n, ii] of slots.entries()){
       const key = `${pi}-${wi}-${ai}-${ii}`;
       const s = getSession(program.id, key);
       const values = act.exercises.map((ex,ei)=>
@@ -52,11 +54,11 @@ export function buildWeekSnapshot(program, pi, wi){
           return { name: m.name, target: m.value, actual: actual!=='' ? actual : null };
         })
       );
-      sessions.push({ n: ii+1, done: !!(s && s.done), date: s?.date || null, note: getSessionNote(program.id, key), values });
+      sessions.push({ n: n+1, day: isFixedDays(program) ? DAY_SHORT[ii] : null, done: !!(s && s.done), date: s?.date || null, note: getSessionNote(program.id, key), values });
     }
     return {
       label: act.label,
-      count: act.count,
+      count: slots.length,
       exercises: act.exercises.map(ex=>({ label: ex.label, metrics: ex.metrics })),
       sessions,
     };
